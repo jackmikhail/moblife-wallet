@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moblife Wallet</title>
+<meta name="description" content="A small cash ledger for the Habboon mafia roleplay. Open a wallet for your character, hand cash to other characters, and watch your balance move in real time.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f1411'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-style='italic' font-weight='700' font-size='20' text-anchor='middle' fill='%23d4a64a'%3E$%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500;1,9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one compact card (the "wallet") that is the whole UI. On a normal tab it floats centred;
+   popped out it fills a small always-on-top window. Single dark look by design: it sits over a game. */
+:root{
+  --felt:#0f1411;        /* page ground, back-room green-black */
+  --card:#171d19;        /* wallet body */
+  --card-2:#1f2621;      /* raised rows, inputs */
+  --line:#2c352e;        /* hairlines */
+  --ink:#ece5d3;         /* paper-white text */
+  --ink-2:#a39d8c;       /* muted */
+  --ink-3:#6f6b5f;       /* faint */
+  --brass:#d4a64a;       /* accent */
+  --brass-2:#f0c468;
+  --up:#86cf8f;          /* money in */
+  --down:#e3715f;        /* money out */
+  --danger:#e3715f;
+  --font-display:"Fraunces", Georgia, "Times New Roman", serif;
+  --font-body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:"IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--felt);color:var(--ink);font:14px/1.45 var(--font-body);
+  -webkit-font-smoothing:antialiased;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:16px;
+  display:grid;place-items:center;
+}
+body.pip{padding:0;display:block;background:var(--card)}
+[hidden]{display:none!important}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--brass-2)}
+
+#app{
+  width:min(100%,340px);background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,.45);overflow:hidden;position:relative;display:flex;flex-direction:column;
+}
+body.pip #app{width:100%;height:100%;border:0;border-radius:0;box-shadow:none}
+.scroll{overflow-y:auto;min-height:0;flex:1}
+
+/* header */
+.bar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--card)}
+.wordmark{font-family:var(--font-display);font-style:italic;font-weight:700;font-size:17px;letter-spacing:.01em;color:var(--brass);line-height:1}
+.wordmark small{display:block;font:500 9px/1 var(--font-body);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin-top:4px;font-style:normal}
+.spacer{flex:1}
+.icon-btn{width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--ink-2);display:grid;place-items:center;padding:0}
+.icon-btn:hover{background:var(--card-2);color:var(--ink);border-color:var(--line)}
+.icon-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3);box-shadow:0 0 0 2px rgba(0,0,0,.25)}
+.dot.live{background:var(--up)}
+.dot.poll{background:var(--brass)}
+.dot.off{background:var(--down)}
+
+/* balance */
+.balance{padding:18px 14px 10px;text-align:left}
+.who{display:flex;align-items:center;gap:8px;min-width:0}
+.who .name{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font:600 9px/1 var(--font-body);letter-spacing:.16em;text-transform:uppercase;padding:4px 6px 3px;border-radius:4px;border:1px solid var(--brass);color:var(--brass);flex:none}
+.badge.civ{border-color:var(--line);color:var(--ink-3)}
+.amount{font-family:var(--font-mono);font-weight:600;font-size:34px;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums;transition:color .25s}
+.amount .cur{color:var(--brass);font-weight:500;margin-right:2px}
+.amount.flash-up{color:var(--up)}
+.amount.flash-down{color:var(--down)}
+.sub{color:var(--ink-3);font-size:11px;margin-top:2px}
+
+/* actions */
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 14px 14px}
+.btn{
+  border:1px solid var(--line);background:var(--card-2);border-radius:10px;padding:10px 12px;font-weight:600;font-size:13px;
+  display:flex;align-items:center;justify-content:center;gap:7px;min-height:40px;
+}
+.btn:hover{border-color:#3b473e}
+.btn.primary{background:var(--brass);border-color:var(--brass);color:#1b1608}
+.btn.primary:hover{background:var(--brass-2)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.wide{grid-column:1/-1}
+
+/* ledger */
+.ledger-head{display:flex;align-items:baseline;padding:8px 14px 4px;border-top:1px solid var(--line)}
+.ledger-head h2{margin:0;font:600 10px/1 var(--font-body);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.ledger{list-style:none;margin:0;padding:0 6px 8px}
+.ledger li{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:8px 8px;border-radius:8px}
+.ledger li+li{border-top:1px solid var(--line)}
+.ledger .sign{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-family:var(--font-mono);font-weight:600;font-size:12px;background:var(--card-2);color:var(--ink-2)}
+.ledger .in .sign{color:var(--up)}
+.ledger .out .sign{color:var(--down)}
+.ledger .what{min-width:0}
+.ledger .who-line{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ledger .note{color:var(--ink-3);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ledger .amt{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:600;text-align:right;font-size:13px}
+.ledger .in .amt{color:var(--up)}
+.ledger .out .amt{color:var(--down)}
+.ledger .when{display:block;color:var(--ink-3);font-size:10px;font-weight:400;font-family:var(--font-body)}
+.empty{padding:14px;color:var(--ink-3);font-size:12px;text-align:center}
+
+/* forms / sheets */
+.sheet{padding:14px}
+.sheet h1{font-family:var(--font-display);font-weight:500;font-size:22px;margin:0 0 4px;letter-spacing:-.01em;text-wrap:balance}
+.sheet p.lead{margin:0 0 14px;color:var(--ink-2);font-size:13px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font:600 10px/1 var(--font-body);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.field .hint{color:var(--ink-3);font-size:11px}
+.input{
+  width:100%;background:var(--card-2);border:1px solid var(--line);border-radius:9px;padding:10px 11px;color:var(--ink);outline:none;
+}
+.input:focus{border-color:var(--brass)}
+.input.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.money{position:relative}
+.money .input{padding-left:26px}
+.money::before{content:"$";position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--brass);font-family:var(--font-mono);font-weight:600}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.toggle{display:flex;align-items:center;gap:10px;padding:10px 11px;background:var(--card-2);border:1px solid var(--line);border-radius:9px;cursor:pointer;user-select:none}
+.toggle input{appearance:none;width:34px;height:20px;border-radius:999px;background:var(--line);position:relative;margin:0;flex:none;transition:background .15s;cursor:pointer}
+.toggle input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-2);transition:transform .15s,background .15s}
+.toggle input:checked{background:var(--brass)}
+.toggle input:checked::after{transform:translateX(14px);background:#1b1608}
+.toggle .t{flex:1}
+.toggle .t b{display:block;font-weight:600;font-size:13px}
+.toggle .t span{color:var(--ink-3);font-size:11px}
+.error{color:var(--danger);font-size:12px;min-height:16px;margin:2px 0 8px}
+.sugg{list-style:none;margin:4px 0 0;padding:4px;background:var(--card-2);border:1px solid var(--line);border-radius:9px;max-height:150px;overflow:auto}
+.sugg li{padding:7px 9px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.sugg li:hover,.sugg li[aria-selected="true"]{background:#2a332c}
+.sugg .badge{font-size:8px;padding:3px 5px 2px}
+.sugg .seen{margin-left:auto;color:var(--ink-3);font-size:10px}
+.keybox{font-family:var(--font-mono);font-size:13px;letter-spacing:.04em;background:var(--card-2);border:1px dashed var(--brass);border-radius:9px;padding:10px 11px;word-break:break-all;user-select:all}
+.linkish{background:none;border:0;padding:0;color:var(--brass-2);text-decoration:underline;font-size:12px}
+.menu{list-style:none;margin:0;padding:6px}
+.menu button{width:100%;text-align:left;background:none;border:0;padding:10px 10px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:13px}
+.menu button:hover{background:var(--card-2)}
+.menu button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:var(--ink-2)}
+.menu .sep{height:1px;background:var(--line);margin:4px 8px}
+.fine{color:var(--ink-3);font-size:11px;line-height:1.5}
+.fine b{color:var(--ink-2);font-weight:600}
+
+/* toast */
+.toast{
+  position:absolute;left:10px;right:10px;bottom:10px;background:#0b0e0c;border:1px solid var(--brass);color:var(--ink);
+  border-radius:10px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:center;
+  box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:5;
+}
+.toast.show{opacity:1;transform:none}
+.toast .big{font-family:var(--font-mono);font-weight:600;font-variant-numeric:tabular-nums}
+.toast.in .big{color:var(--up)}
+.toast.out .big{color:var(--down)}
+.toast .t{min-width:0}
+.toast .t small{display:block;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="host" style="display:contents">
+<main id="app" aria-live="polite">
+
+  <!-- ===== SETUP ===== -->
+  <section id="v-setup" class="scroll" hidden>
+    <div class="bar"><div class="wordmark">Moblife Wallet<small>Habboon · RP ledger</small></div></div>
+    <form class="sheet" id="f-setup" autocomplete="off">
+      <h1>Open a wallet</h1>
+      <p class="lead">One per character. Your cash lives here; hand it to other characters and it moves instantly.</p>
+      <div class="field">
+        <label for="su-name">Character name</label>
+        <input class="input" id="su-name" maxlength="24" placeholder="e.g. Vinnie Caruso" required>
+        <span class="hint">This is the name people pay you by. 2–24 letters, numbers, spaces, . ' - _</span>
+      </div>
+      <div class="field">
+        <label for="su-start">Starting cash</label>
+        <div class="money"><input class="input mono" id="su-start" inputmode="numeric" placeholder="0" required></div>
+        <span class="hint" id="su-cap">Civilians open with up to $5,000.</span>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="su-made">
+        <span class="t"><b>I'm a made guy</b><span>Any starting figure. Your wallet carries a MADE badge everyone can see.</span></span>
+      </label>
+      <div class="error" id="su-err" role="alert"></div>
+      <button class="btn primary wide" type="submit" id="su-go" style="width:100%">Open wallet</button>
+      <p class="fine" style="margin:14px 0 0;text-align:center">Already got one on another device? <button type="button" class="linkish" id="to-recover">Recover it</button></p>
+    </form>
+  </section>
+
+  <!-- ===== RECOVER ===== -->
+  <section id="v-recover" class="scroll" hidden>
+    <div class="bar"><button class="icon-btn" type="button" data-back="setup" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><div class="wordmark">Recover wallet</div></div>
+    <form class="sheet" id="f-recover" autocomplete="off">
+      <p class="lead">Enter your character name and the recovery key you were shown when you opened the wallet.</p>
+      <div class="field"><label for="rc-name">Character name</label><input class="input" id="rc-name" maxlength="24" required></div>
+      <div class="field"><label for="rc-key">Recovery key</label><input class="input mono" id="rc-key" maxlength="64" required spellcheck="false"></div>
+      <div class="error" id="rc-err" role="alert"></div>
+      <button class="btn primary wide" type="submit" style="width:100%">Recover</button>
+    </form>
+  </section>
+
+  <!-- ===== KEY REVEAL ===== -->
+  <section id="v-key" class="scroll" hidden>
+    <div class="bar"><div class="wordmark">Wallet open<small>Save your key</small></div></div>
+    <div class="sheet">
+      <h1>Your recovery key</h1>
+      <p class="lead">This device remembers your wallet. If you switch computers or clear your browser, this key is the only way back in. Nobody can reset it.</p>
+      <div class="keybox" id="key-text"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" type="button" id="key-copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy key</button>
+        <button class="btn primary" type="button" id="key-done">I've saved it</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== WALLET ===== -->
+  <section id="v-wallet" hidden style="display:flex;flex-direction:column;min-height:0;flex:1">
+    <div class="bar">
+      <div class="wordmark">Moblife Wallet</div>
+      <div class="spacer"></div>
+      <span class="dot" id="live-dot" title="Connecting…"></span>
+      <button class="icon-btn" type="button" id="btn-pip" title="Pop out to a corner of your screen" aria-label="Pop out"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="11" width="8" height="6" rx="1"/></svg></button>
+      <button class="icon-btn" type="button" id="btn-menu" title="Menu" aria-label="Menu"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+    </div>
+    <div class="scroll">
+      <div class="balance">
+        <div class="who"><span class="name" id="w-name">—</span><span class="badge" id="w-badge">Made</span></div>
+        <div class="amount" id="w-amount"><span class="cur">$</span><span id="w-num">0</span></div>
+        <div class="sub" id="w-sub">Cash on hand</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="button" id="btn-send"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Hand cash</button>
+        <button class="btn" type="button" id="btn-adjust"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Cash in / out</button>
+      </div>
+      <div class="ledger-head"><h2>Ledger</h2></div>
+      <ul class="ledger" id="ledger"></ul>
+      <div class="empty" id="ledger-empty" hidden>Nothing yet. Your first hand-off shows up here.</div>
+    </div>
+  </section>
+
+  <!-- ===== SEND ===== -->
+  <section id="v-send" class="scroll" hidden>
+    <div class="bar"><button class="icon-btn" type="button" data-back="wallet" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><div class="wordmark">Hand cash</div></div>
+    <form class="sheet" id="f-send" autocomplete="off">
+      <div class="field">
+        <label for="sd-to">To</label>
+        <input class="input" id="sd-to" placeholder="Their character name" maxlength="24" required>
+        <ul class="sugg" id="sd-sugg" hidden></ul>
+      </div>
+      <div class="field">
+        <label for="sd-amt">Amount</label>
+        <div class="money"><input class="input mono" id="sd-amt" inputmode="numeric" placeholder="0" required></div>
+        <span class="hint" id="sd-have"></span>
+      </div>
+      <div class="field">
+        <label for="sd-note">For <span style="text-transform:none;letter-spacing:0;color:var(--ink-3)">(optional)</span></label>
+        <input class="input" id="sd-note" maxlength="80" placeholder="protection, a debt, the job…">
+      </div>
+      <div class="error" id="sd-err" role="alert"></div>
+      <button class="btn primary wide" type="submit" id="sd-go" style="width:100%">Hand it over</button>
+    </form>
+  </section>
+
+  <!-- ===== ADJUST ===== -->
+  <section id="v-adjust" class="scroll" hidden>
+    <div class="bar"><button class="icon-btn" type="button" data-back="wallet" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><div class="wordmark">Cash in / out</div></div>
+    <form class="sheet" id="f-adjust" autocomplete="off">
+      <p class="lead">For money that didn't come from another character: a job, a score, a loss at the tables. It's logged in your ledger like everything else.</p>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" type="button" id="aj-in" aria-pressed="true">Cash in</button>
+        <button class="btn" type="button" id="aj-out" aria-pressed="false">Cash out</button>
+      </div>
+      <div class="field">
+        <label for="aj-amt">Amount</label>
+        <div class="money"><input class="input mono" id="aj-amt" inputmode="numeric" placeholder="0" required></div>
+      </div>
+      <div class="field">
+        <label for="aj-note">Reason</label>
+        <input class="input" id="aj-note" maxlength="80" placeholder="e.g. truck job, poker night" required>
+      </div>
+      <div class="error" id="aj-err" role="alert"></div>
+      <button class="btn primary wide" type="submit" id="aj-go" style="width:100%">Log it</button>
+    </form>
+  </section>
+
+  <!-- ===== MENU ===== -->
+  <section id="v-menu" class="scroll" hidden>
+    <div class="bar"><button class="icon-btn" type="button" data-back="wallet" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><div class="wordmark">Menu</div></div>
+    <ul class="menu">
+      <li><button type="button" id="m-pip"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="11" width="8" height="6" rx="1"/></svg>Pop out to the corner of the screen</button></li>
+      <li><button type="button" id="m-key"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.9 12.1 21 2M15 8l3 3M18 5l3 3"/></svg>Show my recovery key</button></li>
+      <li><button type="button" id="m-refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>Refresh</button></li>
+      <li class="sep"></li>
+      <li><button type="button" id="m-forget" style="color:var(--danger)"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span id="m-forget-label">Forget this wallet on this device</span></button></li>
+    </ul>
+    <div class="sheet" style="padding-top:4px">
+      <p class="fine"><b>How it works.</b> Every character has one wallet. Civilians open with up to $5,000; made guys choose any figure and carry a MADE badge. Handing cash moves it instantly from your wallet to theirs and both ledgers record it. Only you can see your balance. Cash in / out is for money with no other player on the end of it, and it's logged too.</p>
+      <p class="fine" style="margin-top:8px"><b>Corner mode.</b> In Chrome or Edge, "Pop out" gives you a small always-on-top window you can park beside the Habboon client. Other browsers get a small popup window instead.</p>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status"><span class="big" id="toast-amt"></span><span class="t"><span id="toast-title"></span><small id="toast-sub"></small></span></div>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script>
+(() => {
+  const SUPABASE_URL = 'https://rbdpppqwduqvsgrklolb.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJiZHBwcHF3ZHVxdnNncmtsb2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4ODI3NTEsImV4cCI6MjEwMTQ1ODc1MX0.UsVPhCKTkjLQYmCTLuu5ehBsLfdfao3b1Ie-5SoEBO0';
+  const STORE = 'moblife.wallet.v1';
+  const CIV_CAP = 5000;
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: false } });
+  // The app node can live in the pop-out window; look there too.
+  const $ = (id) => document.getElementById(id) || (pipWin && !pipWin.closed ? pipWin.document.getElementById(id) : null);
+
+  // ---------- state ----------
+  let me = null;          // {id, key, name}
+  let wallet = null;      // {id,name,balance,made,created_at}
+  let ledger = [];
+  let channel = null;
+  let pollTimer = null;
+  let lastBalance = null;
+  let pipWin = null;
+
+  const load = () => { try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { return null; } };
+  const save = (v) => { try { v ? localStorage.setItem(STORE, JSON.stringify(v)) : localStorage.removeItem(STORE); } catch {} };
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+  const parseAmt = (s) => { const n = Math.floor(Number(String(s).replace(/[^0-9]/g, ''))); return Number.isFinite(n) ? n : NaN; };
+  const ERR = {
+    name_taken: "That name's already taken. Add a surname or initial.",
+    bad_name: "Names are 2–24 characters: letters, numbers, spaces, . ' - _",
+    over_civilian_cap: "Civilians open with $5,000 at most. Made guys can enter any figure.",
+    bad_amount: "Enter a whole-dollar amount above zero.",
+    insufficient_funds: "You haven't got that much on you.",
+    no_such_wallet: "No wallet under that name. They need to open one first.",
+    self_send: "You can't pay yourself.",
+    bad_key: "Wrong key, or no wallet under that name.",
+  };
+  const msg = (e) => ERR[e?.message] || ERR[e] || (e?.message ? `Something went wrong: ${e.message}` : 'Something went wrong. Try again.');
+
+  async function rpc(fn, args) {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error) throw error;
+    return data;
+  }
+
+  // ---------- views ----------
+  const views = ['setup', 'recover', 'key', 'wallet', 'send', 'adjust', 'menu'];
+  function show(name) {
+    for (const v of views) $('v-' + v).hidden = v !== name;
+    const first = $('v-' + name).querySelector('input:not([type=checkbox])');
+    if (first && name !== 'wallet') setTimeout(() => first.focus(), 30);
+  }
+  document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => show(b.dataset.back)));
+
+  // ---------- toast ----------
+  let toastT;
+  function toast({ amount, dir, title, sub }) {
+    const t = $('toast');
+    t.classList.remove('in', 'out');
+    if (dir) t.classList.add(dir);
+    $('toast-amt').textContent = amount != null ? (dir === 'out' ? '−' : '+') + '$' + fmt(amount) : '';
+    $('toast-title').textContent = title || '';
+    $('toast-sub').textContent = sub || '';
+    t.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => t.classList.remove('show'), 4500);
+  }
+
+  // ---------- render ----------
+  const rel = (iso) => {
+    const d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (d < 60) return 'just now';
+    if (d < 3600) return Math.floor(d / 60) + 'm ago';
+    if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+    if (d < 7 * 86400) return Math.floor(d / 86400) + 'd ago';
+    return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  };
+
+  function render() {
+    if (!wallet) return;
+    $('w-name').textContent = wallet.name;
+    const b = $('w-badge');
+    b.textContent = wallet.made ? 'Made' : 'Civilian';
+    b.classList.toggle('civ', !wallet.made);
+    $('w-num').textContent = fmt(wallet.balance);
+    $('w-sub').textContent = 'Cash on hand · since ' + new Date(wallet.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    if (lastBalance != null && lastBalance !== wallet.balance) {
+      const a = $('w-amount');
+      a.classList.remove('flash-up', 'flash-down');
+      void a.offsetWidth;
+      a.classList.add(wallet.balance > lastBalance ? 'flash-up' : 'flash-down');
+      setTimeout(() => a.classList.remove('flash-up', 'flash-down'), 1200);
+    }
+    lastBalance = wallet.balance;
+
+    const ul = $('ledger');
+    ul.textContent = '';
+    $('ledger-empty').hidden = ledger.length > 0;
+    for (const t of ledger) {
+      const incoming = t.to_id === wallet.id;
+      const li = document.createElement('li');
+      li.className = incoming ? 'in' : 'out';
+      const sign = document.createElement('span'); sign.className = 'sign'; sign.textContent = incoming ? '+' : '−';
+      const what = document.createElement('div'); what.className = 'what';
+      const who = document.createElement('div'); who.className = 'who-line';
+      const note = document.createElement('div'); note.className = 'note';
+      if (t.kind === 'transfer') {
+        who.textContent = incoming ? 'From ' + t.from_name : 'To ' + t.to_name;
+        note.textContent = t.note || 'Cash hand-off';
+      } else if (t.kind === 'open') {
+        who.textContent = 'Opened wallet'; note.textContent = 'Starting cash';
+      } else {
+        who.textContent = t.kind === 'cash_in' ? 'Cash in' : 'Cash out';
+        note.textContent = t.note || '';
+      }
+      what.append(who, note);
+      const amt = document.createElement('div'); amt.className = 'amt';
+      amt.textContent = (incoming ? '+' : '−') + '$' + fmt(t.amount);
+      const when = document.createElement('span'); when.className = 'when'; when.textContent = rel(t.at);
+      amt.append(when);
+      li.append(sign, what, amt);
+      ul.append(li);
+    }
+  }
+
+  // ---------- data ----------
+  async function refresh(opts = {}) {
+    if (!me) return;
+    try {
+      const d = await rpc('rp_me', { p_id: me.id, p_key: me.key });
+      const prev = wallet;
+      wallet = d.wallet; ledger = d.ledger || [];
+      if (opts.announce && prev && wallet.balance !== prev.balance) {
+        const newest = ledger[0];
+        if (newest && newest.kind === 'transfer' && newest.to_id === wallet.id) {
+          toast({ amount: newest.amount, dir: 'in', title: 'From ' + newest.from_name, sub: newest.note || 'Cash hand-off' });
+        }
+      }
+      render();
+    } catch (e) {
+      if (e?.message === 'bad_key') { forget(); return; }
+      setDot('off', 'Offline, retrying…');
+    }
+  }
+
+  function setDot(state, title) {
+    const d = $('live-dot');
+    d.className = 'dot ' + state;
+    d.title = title;
+  }
+
+  function connect() {
+    if (channel) { sb.removeChannel(channel); channel = null; }
+    setDot('', 'Connecting…');
+    channel = sb.channel('rpw:' + me.id, { config: { broadcast: { self: true } } })
+      .on('broadcast', { event: 'tx' }, ({ payload }) => {
+        // Something touched this wallet. Pull the truth from the server, then announce it.
+        if (payload && payload.kind === 'transfer' && payload.to_id === me.id) {
+          refresh().then(() => toast({ amount: payload.amount, dir: 'in', title: 'From ' + payload.from_name, sub: payload.note || 'Cash hand-off' }));
+        } else {
+          refresh();
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setDot('live', 'Live: updates arrive instantly');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setDot('poll', 'Live feed unavailable, checking every 20s');
+        else if (status === 'CLOSED') setDot('poll', 'Reconnecting…');
+      });
+    clearInterval(pollTimer);
+    pollTimer = setInterval(() => { if (document.visibilityState !== 'hidden') refresh({ announce: true }); }, 20000);
+  }
+
+  function enter(creds) {
+    me = creds; save(me);
+    lastBalance = null;
+    show('wallet');
+    refresh().then(connect);
+  }
+
+  function forget() {
+    save(null); me = null; wallet = null; ledger = []; lastBalance = null;
+    if (channel) { sb.removeChannel(channel); channel = null; }
+    clearInterval(pollTimer);
+    $('f-setup').reset(); $('su-err').textContent = '';
+    show('setup');
+  }
+
+  // ---------- setup ----------
+  $('su-made').addEventListener('change', (e) => {
+    $('su-cap').textContent = e.target.checked ? 'Made guys open with any figure.' : 'Civilians open with up to $5,000.';
+  });
+  $('f-setup').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('su-name').value.trim();
+    const start = parseAmt($('su-start').value);
+    const made = $('su-made').checked;
+    const err = $('su-err'); err.textContent = '';
+    if (!Number.isFinite(start) || start < 0) { err.textContent = ERR.bad_amount; return; }
+    if (!made && start > CIV_CAP) { err.textContent = ERR.over_civilian_cap; return; }
+    $('su-go').disabled = true;
+    try {
+      const w = await rpc('rp_create_wallet', { p_name: name, p_start: start, p_made: made });
+      me = { id: w.id, key: w.key, name: w.name }; save(me);
+      $('key-text').textContent = w.key;
+      show('key');
+    } catch (ex) { err.textContent = msg(ex); }
+    $('su-go').disabled = false;
+  });
+  $('to-recover').addEventListener('click', () => show('recover'));
+
+  $('f-recover').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('rc-err'); err.textContent = '';
+    const name = $('rc-name').value.trim(), key = $('rc-key').value.trim();
+    try {
+      const w = await rpc('rp_recover', { p_name: name, p_key: key });
+      enter({ id: w.id, key, name: w.name });
+    } catch (ex) { err.textContent = msg(ex); }
+  });
+
+  async function copyText(text, btn) {
+    try { await navigator.clipboard.writeText(text); } catch {
+      const r = document.createRange(); r.selectNodeContents($('key-text')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }
+    const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = old), 1200);
+  }
+  $('key-copy').addEventListener('click', (e) => copyText($('key-text').textContent, e.currentTarget));
+  $('key-done').addEventListener('click', () => enter(me));
+
+  // ---------- send ----------
+  let suggT, suggItems = [], suggIdx = -1;
+  $('btn-send').addEventListener('click', () => {
+    $('f-send').reset(); $('sd-err').textContent = ''; $('sd-sugg').hidden = true;
+    $('sd-have').textContent = 'You have $' + fmt(wallet.balance);
+    show('send');
+  });
+  $('sd-to').addEventListener('input', () => {
+    clearTimeout(suggT);
+    const q = $('sd-to').value.trim();
+    if (q.length < 1) { $('sd-sugg').hidden = true; return; }
+    suggT = setTimeout(async () => {
+      try {
+        const rows = await rpc('rp_lookup', { p_q: q });
+        suggItems = rows.filter(r => r.id !== me.id);
+        suggIdx = -1;
+        const ul = $('sd-sugg'); ul.textContent = '';
+        for (const r of suggItems) {
+          const li = document.createElement('li');
+          const n = document.createElement('span'); n.textContent = r.name;
+          li.append(n);
+          if (r.made) { const bd = document.createElement('span'); bd.className = 'badge'; bd.textContent = 'Made'; li.append(bd); }
+          const seen = document.createElement('span'); seen.className = 'seen'; seen.textContent = 'seen ' + rel(r.last_seen); li.append(seen);
+          li.addEventListener('mousedown', (ev) => { ev.preventDefault(); pick(r); });
+          ul.append(li);
+        }
+        ul.hidden = suggItems.length === 0;
+      } catch { $('sd-sugg').hidden = true; }
+    }, 180);
+  });
+  function pick(r) { $('sd-to').value = r.name; $('sd-sugg').hidden = true; $('sd-amt').focus(); }
+  $('sd-to').addEventListener('keydown', (e) => {
+    const ul = $('sd-sugg'); if (ul.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggIdx = (suggIdx + (e.key === 'ArrowDown' ? 1 : -1) + suggItems.length) % suggItems.length;
+      [...ul.children].forEach((li, i) => li.setAttribute('aria-selected', i === suggIdx));
+    } else if (e.key === 'Enter' && suggIdx >= 0) { e.preventDefault(); pick(suggItems[suggIdx]); }
+    else if (e.key === 'Escape') ul.hidden = true;
+  });
+  $('sd-to').addEventListener('blur', () => setTimeout(() => ($('sd-sugg').hidden = true), 120));
+
+  $('f-send').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('sd-err'); err.textContent = '';
+    const to = $('sd-to').value.trim(), amount = parseAmt($('sd-amt').value), note = $('sd-note').value.trim();
+    if (!Number.isFinite(amount) || amount <= 0) { err.textContent = ERR.bad_amount; return; }
+    if (amount > wallet.balance) { err.textContent = ERR.insufficient_funds; return; }
+    $('sd-go').disabled = true;
+    try {
+      const r = await rpc('rp_send', { p_id: me.id, p_key: me.key, p_to: to, p_amount: amount, p_note: note || null });
+      show('wallet');
+      toast({ amount, dir: 'out', title: 'To ' + r.tx.to_name, sub: note || 'Cash hand-off' });
+      await refresh();
+    } catch (ex) { err.textContent = msg(ex); }
+    $('sd-go').disabled = false;
+  });
+
+  // ---------- adjust ----------
+  let adjDir = 1;
+  const setAdj = (d) => { adjDir = d; $('aj-in').setAttribute('aria-pressed', d > 0); $('aj-out').setAttribute('aria-pressed', d < 0);
+    $('aj-in').classList.toggle('primary', d > 0); $('aj-out').classList.toggle('primary', d < 0); $('aj-go').textContent = d > 0 ? 'Log cash in' : 'Log cash out'; };
+  $('aj-in').addEventListener('click', () => setAdj(1));
+  $('aj-out').addEventListener('click', () => setAdj(-1));
+  $('btn-adjust').addEventListener('click', () => { $('f-adjust').reset(); $('aj-err').textContent = ''; setAdj(1); show('adjust'); });
+  $('f-adjust').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('aj-err'); err.textContent = '';
+    const amount = parseAmt($('aj-amt').value), note = $('aj-note').value.trim();
+    if (!Number.isFinite(amount) || amount <= 0) { err.textContent = ERR.bad_amount; return; }
+    if (adjDir < 0 && amount > wallet.balance) { err.textContent = ERR.insufficient_funds; return; }
+    $('aj-go').disabled = true;
+    try {
+      await rpc('rp_adjust', { p_id: me.id, p_key: me.key, p_amount: adjDir * amount, p_note: note });
+      show('wallet');
+      toast({ amount, dir: adjDir > 0 ? 'in' : 'out', title: adjDir > 0 ? 'Cash in' : 'Cash out', sub: note });
+      await refresh();
+    } catch (ex) { err.textContent = msg(ex); }
+    $('aj-go').disabled = false;
+  });
+
+  // ---------- menu ----------
+  $('btn-menu').addEventListener('click', () => show('menu'));
+  $('m-key').addEventListener('click', () => { $('key-text').textContent = me.key; show('key'); });
+  $('m-refresh').addEventListener('click', () => { refresh(); show('wallet'); });
+  $('m-forget').addEventListener('click', (e) => {
+    const b = e.currentTarget, label = $('m-forget-label');
+    const reset = () => { delete b.dataset.armed; label.textContent = 'Forget this wallet on this device'; };
+    if (b.dataset.armed) { reset(); forget(); return; }
+    b.dataset.armed = '1'; label.textContent = 'Sure? Without your key it\'s gone. Click again to forget.';
+    setTimeout(reset, 4000);
+  });
+
+  // ---------- pop out (corner mode) ----------
+  async function popOut() {
+    if (pipWin && !pipWin.closed) { pipWin.focus?.(); return; }
+    if ('documentPictureInPicture' in window) {
+      try {
+        pipWin = await window.documentPictureInPicture.requestWindow({ width: 340, height: 540 });
+        // carry styles + fonts over, then move the app itself
+        for (const node of document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"], style')) pipWin.document.head.append(node.cloneNode(true));
+        pipWin.document.title = 'Moblife Wallet';
+        pipWin.document.body.className = 'pip';
+        pipWin.document.body.append($('app'));
+        document.body.classList.add('pipped');
+        $('host').innerHTML = '<div class="empty" style="color:var(--ink-2)">Wallet is popped out. Close the little window to bring it back.</div>';
+        pipWin.addEventListener('pagehide', () => {
+          $('host').textContent = '';
+          $('host').append(pipWin.document.getElementById('app'));
+          document.body.classList.remove('pipped');
+          pipWin = null;
+        });
+        return;
+      } catch (e) { /* fall through to a plain popup */ }
+    }
+    const w = window.open(location.href, 'moblife-wallet', 'popup=yes,width=340,height=560,resizable=yes');
+    if (!w) toast({ title: 'Popup blocked', sub: 'Allow popups for this site, or keep this tab narrow at the side.' });
+  }
+  $('btn-pip').addEventListener('click', popOut);
+  $('m-pip').addEventListener('click', popOut);
+  if (!('documentPictureInPicture' in window)) $('btn-pip').title = 'Open in a small popup window';
+
+  // ---------- lifecycle ----------
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && me) refresh({ announce: true }); });
+  window.addEventListener('online', () => { if (me) { refresh(); connect(); } });
+
+  const saved = load();
+  if (saved && saved.id && saved.key) enter(saved); else show('setup');
+})();
+</script>
+</body>
+</html>
